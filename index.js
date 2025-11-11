@@ -6,7 +6,7 @@ import { Client, GatewayIntentBits, Partials, EmbedBuilder } from 'discord.js';
 const PORT = process.env.PORT || 3000;
 const SHARED_SECRET = process.env.SHARED_SECRET || 'dev_secret';
 const DISCORD_TOKEN = process.env.DISCORD_TOKEN;
-const GUILD_ID = process.env.GUILD_ID; // Añade esto a tu .env
+const GUILD_ID = process.env.GUILD_ID; // Add this to your .env
 
 if (!DISCORD_TOKEN) {
   console.error("Set DISCORD_TOKEN in .env");
@@ -40,22 +40,22 @@ const client = new Client({
 
 const REGISTRATION_CHANNEL = 'roblox-registration';
 
-// Mapeo de productos
+// Product mapping
 const productMap = {
   '12345678': { 
     filename: 'configs/configPremium.zip', 
     description: 'Premium Config',
-    name: 'Config Premium'
+    name: 'Premium Config'
   },
   '87654321': { 
     filename: 'configs/configBasic.zip', 
     description: 'Basic Config',
-    name: 'Config Básico'
+    name: 'Basic Config'
   }
 };
 
 client.once('ready', async () => {
-  console.log(`Bot conectado como ${client.user.tag}`);
+  console.log(`Bot connected as ${client.user.tag}`);
 
   client.guilds.cache.forEach(async (guild) => {
     const channel = guild.channels.cache.find(
@@ -64,19 +64,19 @@ client.once('ready', async () => {
     if (!channel) return;
 
     const embed = new EmbedBuilder()
-      .setTitle('🎮 Registro de Cuenta Roblox')
+      .setTitle('🎮 Roblox Account Registration')
       .setDescription(
-        '**¡Bienvenido al sistema de registro!**\n\n' +
-        '**Para vincular tu cuenta:**\n' +
-        '`!register <TuUsuarioDeRoblox>`\n' +
-        '*Ejemplo: !register gaelxir*\n\n' +
-        '**Para desvincular tu cuenta:**\n' +
+        '**Welcome to the registration system!**\n\n' +
+        '**To link your account:**\n' +
+        '`!register <YourRobloxUsername>`\n' +
+        '*Example: !register gaelxir*\n\n' +
+        '**To unlink your account:**\n' +
         '`!unlink`\n\n' +
-        '✅ Todos los mensajes serán eliminados automáticamente.\n' +
-        '🔒 Tu cuenta de Roblox solo se usará para entregarte tus compras.'
+        '✅ All messages will be automatically deleted.\n' +
+        '🔒 Your Roblox account will only be used to deliver your purchases.'
       )
       .setColor(0xFF0000)
-      .setFooter({ text: 'Sistema Automático de Registro | Mantén el canal limpio' })
+      .setFooter({ text: 'Automatic Registration System | Keep the channel clean' })
       .setThumbnail(client.user.displayAvatarURL())
       .setTimestamp();
 
@@ -100,19 +100,19 @@ client.on('messageCreate', async (message) => {
 
   const content = message.content.trim();
 
-  // Comando !register
+  // !register command
   if (content.startsWith('!register ')) {
     const args = content.split(' ');
     const robloxUsername = args.slice(1).join(' ');
 
     if (!robloxUsername || robloxUsername.length < 3) {
-      const errorMsg = await message.reply('❌ Usuario inválido. Usa: `!register <UsuarioRoblox>`');
+      const errorMsg = await message.reply('❌ Invalid username. Use: `!register <RobloxUsername>`');
       setTimeout(() => errorMsg.delete().catch(() => {}), 5000);
       setTimeout(() => message.delete().catch(() => {}), 1000);
       return;
     }
 
-    // Obtener ID de Roblox desde username
+    // Get Roblox ID from username
     try {
       const fetch = (await import('node-fetch')).default;
       const response = await fetch(`https://users.roblox.com/v1/usernames/users`, {
@@ -124,7 +124,7 @@ client.on('messageCreate', async (message) => {
       const data = await response.json();
       
       if (!data.data || data.data.length === 0) {
-        const errorMsg = await message.reply('❌ No se encontró ese usuario en Roblox.');
+        const errorMsg = await message.reply('❌ User not found on Roblox.');
         setTimeout(() => errorMsg.delete().catch(() => {}), 5000);
         setTimeout(() => message.delete().catch(() => {}), 1000);
         return;
@@ -138,40 +138,40 @@ client.on('messageCreate', async (message) => {
 
       try {
         const embed = new EmbedBuilder()
-          .setTitle('✅ Cuenta Registrada')
+          .setTitle('✅ Account Registered')
           .setDescription(
-            `Tu cuenta de Roblox ha sido vinculada exitosamente!\n\n` +
-            `**Usuario:** ${displayName} (@${robloxUsername})\n` +
+            `Your Roblox account has been successfully linked!\n\n` +
+            `**User:** ${displayName} (@${robloxUsername})\n` +
             `**ID:** ${robloxId}\n\n` +
-            `Ahora puedes comprar configs en el juego y las recibirás aquí.`
+            `You can now purchase configs in-game and receive them here.`
           )
           .setColor(0x00FF00)
           .setTimestamp();
         
         await message.author.send({ embeds: [embed] });
       } catch (err) {
-        console.error('No se pudo enviar DM:', err);
+        console.error('Could not send DM:', err);
       }
 
       setTimeout(() => message.delete().catch(() => {}), 1000);
       return;
 
     } catch (error) {
-      console.error('Error al buscar usuario:', error);
-      const errorMsg = await message.reply('❌ Error al buscar el usuario. Intenta nuevamente.');
+      console.error('Error fetching user:', error);
+      const errorMsg = await message.reply('❌ Error fetching user. Please try again.');
       setTimeout(() => errorMsg.delete().catch(() => {}), 5000);
       setTimeout(() => message.delete().catch(() => {}), 1000);
       return;
     }
   }
 
-  // Comando !unlink
+  // !unlink command
   if (content === '!unlink') {
     const userId = message.author.id;
     const robloxId = Object.keys(db.mappings).find((id) => db.mappings[id] === userId);
 
     if (!robloxId) {
-      const errorMsg = await message.reply('❌ No tienes ninguna cuenta de Roblox vinculada.');
+      const errorMsg = await message.reply('❌ You do not have any linked Roblox account.');
       setTimeout(() => errorMsg.delete().catch(() => {}), 5000);
       setTimeout(() => message.delete().catch(() => {}), 1000);
       return;
@@ -182,10 +182,10 @@ client.on('messageCreate', async (message) => {
 
     try {
       const embed = new EmbedBuilder()
-        .setTitle('⚠️ Cuenta Desvinculada')
+        .setTitle('⚠️ Account Unlinked')
         .setDescription(
-          `Tu cuenta de Roblox **${robloxId}** ha sido desvinculada.\n\n` +
-          `Puedes registrar otra cuenta cuando quieras con \`!register\``
+          `Your Roblox account **${robloxId}** has been unlinked.\n\n` +
+          `You can register another account anytime with \`!register\``
         )
         .setColor(0xFFA500)
         .setTimestamp();
@@ -197,14 +197,14 @@ client.on('messageCreate', async (message) => {
     return;
   }
 
-  // Eliminar cualquier otro mensaje
+  // Delete any other message
   setTimeout(() => message.delete().catch(() => {}), 1000);
 });
 
 async function assignBuyerRole(discordId) {
   try {
     if (!GUILD_ID) {
-      console.error('GUILD_ID no configurado en .env');
+      console.error('GUILD_ID not configured in .env');
       return false;
     }
 
@@ -220,7 +220,7 @@ async function assignBuyerRole(discordId) {
       buyerRole = await guild.roles.create({
         name: 'BUYER',
         color: 0x00FF00,
-        reason: 'Rol automático para compradores'
+        reason: 'Automatic role for buyers'
       });
     }
 
@@ -231,7 +231,7 @@ async function assignBuyerRole(discordId) {
     
     return false;
   } catch (err) {
-    console.error('Error asignando rol:', err);
+    console.error('Error assigning role:', err);
     return false;
   }
 }
@@ -239,42 +239,42 @@ async function assignBuyerRole(discordId) {
 async function deliverToDiscord(discordId, payload) {
   try {
     const user = await client.users.fetch(discordId);
-    if (!user) return { ok: false, error: 'Usuario no encontrado' };
+    if (!user) return { ok: false, error: 'User not found' };
 
     const product = productMap[payload.productId];
     
     const embed = new EmbedBuilder()
-      .setTitle('🎉 ¡Compra Recibida!')
+      .setTitle('🎉 Purchase Received!')
       .setDescription(
-        `**Producto:** ${product ? product.name : 'Desconocido'}\n` +
-        `**Usuario Roblox:** ${payload.username || 'N/A'}\n` +
-        `**ID de Compra:** ${payload.receiptId}`
+        `**Product:** ${product ? product.name : 'Unknown'}\n` +
+        `**Roblox User:** ${payload.username || 'N/A'}\n` +
+        `**Purchase ID:** ${payload.receiptId}`
       )
       .setColor(0x00FF00)
       .setTimestamp()
-      .setFooter({ text: 'Gracias por tu compra!' });
+      .setFooter({ text: 'Thank you for your purchase!' });
 
     await user.send({ embeds: [embed] });
 
-    // Enviar archivo si existe
+    // Send file if exists
     if (product && fs.existsSync(product.filename)) {
       await user.send({ 
-        content: `📦 **Aquí está tu ${product.description}:**`,
+        content: `📦 **Here is your ${product.description}:**`,
         files: [product.filename] 
       });
     } else {
-      await user.send('⚠️ Archivo no configurado. Contacta con soporte.');
+      await user.send('⚠️ File not configured. Contact support.');
     }
 
-    // Asignar rol BUYER
+    // Assign BUYER role
     const roleAssigned = await assignBuyerRole(discordId);
     if (roleAssigned) {
-      await user.send('✅ Se te ha asignado el rol **BUYER** en el servidor!');
+      await user.send('✅ You have been assigned the **BUYER** role in the server!');
     }
 
     return { ok: true };
   } catch (err) {
-    console.error('Error en deliverToDiscord:', err);
+    console.error('Error in deliverToDiscord:', err);
     return { ok: false, error: err.message };
   }
 }
@@ -330,4 +330,4 @@ app.get('/health', (req, res) => {
 });
 
 client.login(DISCORD_TOKEN);
-app.listen(PORT, () => console.log(`Servidor escuchando en puerto ${PORT}`));
+app.listen(PORT, () => console.log(`Server listening on port ${PORT}`));
