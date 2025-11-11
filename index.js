@@ -73,6 +73,12 @@ const productMap = {
     filename: 'configs/deerage.zip', 
     description: 'THE BEST Dee hood RAGE CFG',
     name: 'Dee Hood Rage CFG'
+  },
+    '1583049994': { 
+    gamePassId: '1583049994',
+    filename: 'configs/arage.zip', 
+    description: 'THE BEST Ar hood RAGE CFG',
+    name: 'Ar Hood Rage CFG'
   }
 };
 
