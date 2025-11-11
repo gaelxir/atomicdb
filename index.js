@@ -57,6 +57,7 @@ const client = new Client({
 
 const REGISTRATION_CHANNEL = 'roblox-registration';
 const CHECK_CHANNEL = 'check-bought';
+const PROOFS_CHANNEL = 'proofs';
 
 // Product mapping with Game Pass IDs
 const productMap = {
@@ -99,6 +100,51 @@ async function checkGamePassOwnership(userId, gamePassId) {
     return owns;
   } catch (error) {
     console.error('Error checking Game Pass:', error && (error.stack || error));
+    return false;
+  }
+}
+
+// Send proof message to #proofs channel
+async function sendProofMessage(guild, user, product, robloxId) {
+  try {
+    const proofsChannel = guild.channels.cache.find(ch => ch.name === PROOFS_CHANNEL && ch.isTextBased());
+    
+    if (!proofsChannel) {
+      dbg('sendProofMessage -> proofs channel not found in guild:', guild.id);
+      return false;
+    }
+
+    const embed = new EmbedBuilder()
+      .setTitle('🎊 AUTOMATIC SYSTEM NEW BUY!')
+      .setDescription(
+        `**✨ SUCCESSFUL PURCHASE ✨**\n\n` +
+        `**Buyer:** ${user} (${user.tag})\n` +
+        `**Product:** ${product.name}\n` +
+        `**Roblox ID:** ${robloxId}\n\n` +
+        `━━━━━━━━━━━━━━━━━━━━━━\n\n` +
+        `**💬 Thank you for your purchase!**\n` +
+        `We appreciate your trust in our configs! Your ${product.name} has been delivered to your DMs.\n\n` +
+        `**🎯 Need Help?**\n` +
+        `If you have any questions, issues, or need support with your config, feel free to:\n` +
+        `• Open a support ticket\n` +
+        `• Contact our support team\n` +
+        `• Check our tutorials and guides\n\n` +
+        `**🔥 Enjoy your config and dominate the game!**\n` +
+        `We hope you love your new setup. Good luck out there! 🎮\n\n` +
+        `━━━━━━━━━━━━━━━━━━━━━━\n` +
+        `*Delivered by Automatic Config Delivery System*`
+      )
+      .setColor(0x00FF00)
+      .setThumbnail(user.displayAvatarURL({ dynamic: true, size: 256 }))
+      .setFooter({ text: `Purchase ID: ${Date.now()}` })
+      .setTimestamp();
+
+    await proofsChannel.send({ embeds: [embed] });
+    dbg('sendProofMessage -> proof posted in channel for user:', user.id, 'product:', product.name);
+    return true;
+  } catch (err) {
+    console.error('Error sending proof message:', err && (err.stack || err));
+    dbg('sendProofMessage -> error:', err && (err.message || err));
     return false;
   }
 }
@@ -153,7 +199,7 @@ async function assignBuyerRole(discordId) {
   }
 }
 
-async function deliverConfig(user, product, robloxId, gamePassId) {
+async function deliverConfig(user, product, robloxId, gamePassId, guild) {
   try {
     dbg('deliverConfig -> start for user:', user.id, 'product:', product?.name);
     const embed = new EmbedBuilder()
@@ -187,6 +233,11 @@ async function deliverConfig(user, product, robloxId, gamePassId) {
     if (roleAssigned) {
       await user.send('✅ You have been assigned the **BUYER** role in the server!');
       dbg('deliverConfig -> notified user about role assignment');
+    }
+
+    // Send proof message to #proofs channel
+    if (guild) {
+      await sendProofMessage(guild, user, product, robloxId);
     }
 
     dbg('deliverConfig -> success for user:', user.id);
@@ -240,6 +291,18 @@ async function deliverToDiscord(discordId, payload) {
     if (roleAssigned) {
       await user.send('✅ You have been assigned the **BUYER** role in the server!');
       dbg('deliverToDiscord -> notified user about role assignment');
+    }
+
+    // Send proof message to #proofs channel
+    if (GUILD_ID && product) {
+      try {
+        const guild = await client.guilds.fetch(GUILD_ID);
+        if (guild) {
+          await sendProofMessage(guild, user, product, payload.userId);
+        }
+      } catch (guildErr) {
+        dbg('deliverToDiscord -> could not send proof message:', guildErr && guildErr.message);
+      }
     }
 
     dbg('deliverToDiscord -> finished OK for discordId:', discordId);
@@ -518,7 +581,7 @@ client.on('messageCreate', async (message) => {
           foundAny = true;
           dbg('!check -> user owns pass, delivering product:', product.name);
           
-          const success = await deliverConfig(message.author, product, robloxId, product.gamePassId);
+          const success = await deliverConfig(message.author, product, robloxId, product.gamePassId, message.guild);
           
           if (success) {
             db.deliveredPasses[deliveryKey] = {
