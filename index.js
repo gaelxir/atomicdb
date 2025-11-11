@@ -58,6 +58,7 @@ const client = new Client({
 const REGISTRATION_CHANNEL = 'roblox-registration';
 const CHECK_CHANNEL = 'check-bought';
 const PROOFS_CHANNEL = 'proofs';
+const BANNER_URL = 'https://media.discordapp.net/attachments/1435421930084634624/1437892661766783006/bannmn.png?ex=6914e565&is=691393e5&hm=ee384f334d57bed7e9d2b3c00df20970a0f511d24c5f0bd9b341cc9414b93f76&=&format=webp&quality=lossless&width=1872&height=378'; // Pon tu link del banner aquí
 
 // Product mapping with Game Pass IDs
 const productMap = {
@@ -133,15 +134,16 @@ async function sendProofMessage(guild, user, product, robloxId) {
         `━━━━━━━━━━━━━━━━━━━━━━\n` +
         `*Delivered by Automatic Config Delivery System*`
       )
-      .setColor(0x00FF00)
+      .setColor(0x005CFA)
+      .setImage(BANNER_URL)
       .setThumbnail(user.displayAvatarURL({ dynamic: true, size: 256 }))
       .setFooter({ text: `Purchase ID: ${Date.now()}` })
       .setTimestamp();
 
-await proofsChannel.send({ 
-  content: '@everyone',
-  embeds: [embed] 
-});
+    await proofsChannel.send({ 
+      content: '@everyone',
+      embeds: [embed] 
+    });
     dbg('sendProofMessage -> proof posted in channel for user:', user.id, 'product:', product.name);
     return true;
   } catch (err) {
