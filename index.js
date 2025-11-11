@@ -115,7 +115,7 @@ async function sendProofMessage(guild, user, product, robloxId) {
     }
 
     const embed = new EmbedBuilder()
-      .setTitle('@everyone 🎊 AUTOMATIC SYSTEM NEW BUY!')
+      .setTitle('🎊 AUTOMATIC SYSTEM NEW BUY!')
       .setDescription(
         `**✨ SUCCESSFUL PURCHASE ✨**\n\n` +
         `**Buyer:** ${user} (${user.tag})\n` +
@@ -138,7 +138,10 @@ async function sendProofMessage(guild, user, product, robloxId) {
       .setFooter({ text: `Purchase ID: ${Date.now()}` })
       .setTimestamp();
 
-    await proofsChannel.send({ embeds: [embed] });
+await proofsChannel.send({ 
+  content: '@everyone',
+  embeds: [embed] 
+});
     dbg('sendProofMessage -> proof posted in channel for user:', user.id, 'product:', product.name);
     return true;
   } catch (err) {
