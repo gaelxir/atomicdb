@@ -115,12 +115,11 @@ async function sendProofMessage(guild, user, product, robloxId) {
     }
 
     const embed = new EmbedBuilder()
-      .setTitle('🎊 AUTOMATIC SYSTEM NEW BUY!')
+      .setTitle('@everyone 🎊 AUTOMATIC SYSTEM NEW BUY!')
       .setDescription(
         `**✨ SUCCESSFUL PURCHASE ✨**\n\n` +
         `**Buyer:** ${user} (${user.tag})\n` +
         `**Product:** ${product.name}\n` +
-        `**Roblox ID:** ${robloxId}\n\n` +
         `━━━━━━━━━━━━━━━━━━━━━━\n\n` +
         `**💬 Thank you for your purchase!**\n` +
         `We appreciate your trust in our configs! Your ${product.name} has been delivered to your DMs.\n\n` +
