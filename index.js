@@ -345,7 +345,7 @@ client.on('messageCreate', async (message) => {
   // Log every incoming message in channels we care about (critical)
   dbg('messageCreate -> author:', message.author.tag, 'channel:', message.channel.name, 'content:', message.content);
 
-  if (message.channel.name !== REGISTRATION_CHANNEL) return;
+ if (![REGISTRATION_CHANNEL, CHECK_CHANNEL].includes(message.channel.name)) return;
 
   const content = message.content.trim();
   const channelName = message.channel.name;
