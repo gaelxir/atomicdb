@@ -13,6 +13,22 @@ if (!DISCORD_TOKEN) {
   process.exit(1);
 }
 
+// ---------------- DEBUG HELPERS ----------------
+const DEBUG = true;
+function dbg(...args) {
+  if (DEBUG) console.log('[DEBUG]', ...args);
+}
+
+// capture fatal/unhandled errors (useful in Railway)
+process.on('unhandledRejection', (err) => {
+  console.error('[FATAL] unhandledRejection:', err && (err.stack || err));
+});
+process.on('uncaughtException', (err) => {
+  console.error('[FATAL] uncaughtException:', err && (err.stack || err));
+});
+dbg('Debugging enabled');
+// ------------------------------------------------
+
 const DB_PATH = path.join(process.cwd(), 'storage', 'db.json');
 fs.ensureFileSync(DB_PATH);
 
@@ -63,54 +79,83 @@ async function checkGamePassOwnership(userId, gamePassId) {
   try {
     const fetch = (await import('node-fetch')).default;
     const url = `https://inventory.roblox.com/v1/users/${userId}/items/GamePass/${gamePassId}`;
-    
+    dbg('checkGamePassOwnership -> fetching URL:', url);
+
     const response = await fetch(url);
-    const data = await response.json();
-    
-    return data.data && data.data.length > 0;
+    dbg('checkGamePassOwnership -> HTTP status:', response.status);
+
+    let data;
+    try {
+      data = await response.json();
+      dbg('checkGamePassOwnership -> parsed JSON response:', JSON.stringify(data));
+    } catch (parseErr) {
+      const text = await response.text().catch(() => null);
+      dbg('checkGamePassOwnership -> failed to parse JSON, raw text:', text);
+      throw parseErr;
+    }
+
+    const owns = data.data && data.data.length > 0;
+    dbg(`checkGamePassOwnership -> user ${userId} owns pass ${gamePassId}?`, owns);
+    return owns;
   } catch (error) {
-    console.error('Error checking Game Pass:', error);
+    console.error('Error checking Game Pass:', error && (error.stack || error));
     return false;
   }
 }
 
 async function assignBuyerRole(discordId) {
   try {
+    dbg('assignBuyerRole -> start for discordId:', discordId);
     if (!GUILD_ID) {
       console.error('GUILD_ID not configured in .env');
+      dbg('assignBuyerRole -> aborted: no GUILD_ID');
       return false;
     }
 
     const guild = await client.guilds.fetch(GUILD_ID);
-    if (!guild) return false;
+    if (!guild) {
+      dbg('assignBuyerRole -> guild not found for GUILD_ID:', GUILD_ID);
+      return false;
+    }
 
     const member = await guild.members.fetch(discordId);
-    if (!member) return false;
+    if (!member) {
+      dbg('assignBuyerRole -> member not found for discordId:', discordId);
+      return false;
+    }
 
     let buyerRole = guild.roles.cache.find(role => role.name === 'BUYER');
     
     if (!buyerRole) {
+      dbg('assignBuyerRole -> BUYER role not found, creating it...');
       buyerRole = await guild.roles.create({
         name: 'BUYER',
         color: 0x00FF00,
         reason: 'Automatic role for buyers'
       });
+      dbg('assignBuyerRole -> BUYER role created with id:', buyerRole.id);
+    } else {
+      dbg('assignBuyerRole -> Found existing BUYER role id:', buyerRole.id);
     }
 
     if (!member.roles.cache.has(buyerRole.id)) {
       await member.roles.add(buyerRole);
+      dbg('assignBuyerRole -> role added to member:', discordId);
       return true;
     }
     
+    dbg('assignBuyerRole -> member already had BUYER role:', discordId);
     return false;
   } catch (err) {
-    console.error('Error assigning role:', err);
+    console.error('Error assigning role:', err && (err.stack || err));
+    dbg('assignBuyerRole -> error assigning role for', discordId, err && (err.message || err));
     return false;
   }
 }
 
 async function deliverConfig(user, product, robloxId, gamePassId) {
   try {
+    dbg('deliverConfig -> start for user:', user.id, 'product:', product?.name);
     const embed = new EmbedBuilder()
       .setTitle('🎉 Config Delivered!')
       .setDescription(
@@ -123,36 +168,48 @@ async function deliverConfig(user, product, robloxId, gamePassId) {
       .setFooter({ text: 'Thank you for your purchase!' });
 
     await user.send({ embeds: [embed] });
+    dbg('deliverConfig -> embed DM sent to', user.id);
 
     if (product && fs.existsSync(product.filename)) {
       await user.send({ 
         content: `📦 **Here is your ${product.description}:**`,
         files: [product.filename] 
       });
+      dbg('deliverConfig -> file sent:', product.filename);
     } else {
       await user.send('⚠️ File not configured. Contact support.');
+      dbg('deliverConfig -> missing file for product:', product && product.filename);
       return false;
     }
 
     const roleAssigned = await assignBuyerRole(user.id);
+    dbg('deliverConfig -> assignBuyerRole result:', roleAssigned);
     if (roleAssigned) {
       await user.send('✅ You have been assigned the **BUYER** role in the server!');
+      dbg('deliverConfig -> notified user about role assignment');
     }
 
+    dbg('deliverConfig -> success for user:', user.id);
     return true;
   } catch (err) {
-    console.error('Error delivering config:', err);
+    console.error('Error delivering config:', err && (err.stack || err));
+    dbg('deliverConfig -> error for user:', user && user.id, err && (err.message || err));
     return false;
   }
 }
 
 async function deliverToDiscord(discordId, payload) {
   try {
+    dbg('deliverToDiscord -> start for discordId:', discordId, 'payload.receiptId:', payload.receiptId);
     const user = await client.users.fetch(discordId);
-    if (!user) return { ok: false, error: 'User not found' };
+    if (!user) {
+      dbg('deliverToDiscord -> user not found for discordId:', discordId);
+      return { ok: false, error: 'User not found' };
+    }
 
     const product = productMap[payload.productId];
-    
+    dbg('deliverToDiscord -> resolved product:', product ? product.name : 'UNKNOWN');
+
     const embed = new EmbedBuilder()
       .setTitle('🎉 Purchase Received!')
       .setDescription(
@@ -165,38 +222,48 @@ async function deliverToDiscord(discordId, payload) {
       .setFooter({ text: 'Thank you for your purchase!' });
 
     await user.send({ embeds: [embed] });
+    dbg('deliverToDiscord -> sent purchase embed to user:', discordId);
 
     if (product && fs.existsSync(product.filename)) {
       await user.send({ 
         content: `📦 **Here is your ${product.description}:**`,
         files: [product.filename] 
       });
+      dbg('deliverToDiscord -> sent file to user:', product.filename);
     } else {
       await user.send('⚠️ File not configured. Contact support.');
+      dbg('deliverToDiscord -> file missing for product:', product && product.filename);
     }
 
     const roleAssigned = await assignBuyerRole(discordId);
+    dbg('deliverToDiscord -> assignBuyerRole result:', roleAssigned);
     if (roleAssigned) {
       await user.send('✅ You have been assigned the **BUYER** role in the server!');
+      dbg('deliverToDiscord -> notified user about role assignment');
     }
 
+    dbg('deliverToDiscord -> finished OK for discordId:', discordId);
     return { ok: true };
   } catch (err) {
-    console.error('Error in deliverToDiscord:', err);
+    console.error('Error in deliverToDiscord:', err && (err.stack || err));
+    dbg('deliverToDiscord -> error for discordId:', discordId, err && (err.message || err));
     return { ok: false, error: err.message };
   }
 }
 
 client.once('ready', async () => {
   console.log(`Bot connected as ${client.user.tag}`);
+  dbg('ready -> client.user:', client.user?.tag);
 
   for (const guild of client.guilds.cache.values()) {
+    dbg('ready -> setting up guild:', guild.id, guild.name);
     // Registration channel embed
     const regChannel = guild.channels.cache.find(
       (ch) => ch.name === REGISTRATION_CHANNEL && ch.isTextBased()
     );
     
     if (regChannel) {
+      dbg('ready -> found registration channel in guild:', guild.id);
       const embed = new EmbedBuilder()
         .setTitle('🎮 Roblox Account Registration')
         .setDescription(
@@ -223,6 +290,9 @@ client.once('ready', async () => {
       
       if (!hasEmbed) {
         await regChannel.send({ embeds: [embed] });
+        dbg('ready -> posted registration embed in channel:', regChannel.id);
+      } else {
+        dbg('ready -> registration embed already present in channel:', regChannel.id);
       }
     }
 
@@ -232,6 +302,7 @@ client.once('ready', async () => {
     );
     
     if (checkChannel) {
+      dbg('ready -> found check channel in guild:', guild.id);
       const embed = new EmbedBuilder()
         .setTitle('✅ Check Your Purchase')
         .setDescription(
@@ -260,6 +331,9 @@ client.once('ready', async () => {
       
       if (!hasEmbed) {
         await checkChannel.send({ embeds: [embed] });
+        dbg('ready -> posted check embed in channel:', checkChannel.id);
+      } else {
+        dbg('ready -> check embed already present in channel:', checkChannel.id);
       }
     }
   }
@@ -268,6 +342,9 @@ client.once('ready', async () => {
 client.on('messageCreate', async (message) => {
   if (message.author.bot) return;
   if (!message.channel.isTextBased()) return;
+  // Log every incoming message in channels we care about (critical)
+  dbg('messageCreate -> author:', message.author.tag, 'channel:', message.channel.name, 'content:', message.content);
+
   if (message.channel.name !== REGISTRATION_CHANNEL) return;
 
   const content = message.content.trim();
@@ -277,6 +354,7 @@ client.on('messageCreate', async (message) => {
   if (channelName === REGISTRATION_CHANNEL) {
     // !register command
     if (content.startsWith('!register ')) {
+      dbg('!register command detected from', message.author.tag, 'content:', content);
       const args = content.split(' ');
       const robloxUsername = args.slice(1).join(' ');
 
@@ -284,6 +362,7 @@ client.on('messageCreate', async (message) => {
         const errorMsg = await message.reply('❌ Invalid username. Use: `!register <RobloxUsername>`');
         setTimeout(() => errorMsg.delete().catch(() => {}), 5000);
         setTimeout(() => message.delete().catch(() => {}), 1000);
+        dbg('!register -> invalid username provided by', message.author.tag);
         return;
       }
 
@@ -295,12 +374,15 @@ client.on('messageCreate', async (message) => {
           body: JSON.stringify({ usernames: [robloxUsername], excludeBannedUsers: true })
         });
         
+        dbg('!register -> Roblox users API status:', response.status);
         const data = await response.json();
-        
+        dbg('!register -> Roblox users API response:', JSON.stringify(data));
+
         if (!data.data || data.data.length === 0) {
           const errorMsg = await message.reply('❌ User not found on Roblox.');
           setTimeout(() => errorMsg.delete().catch(() => {}), 5000);
           setTimeout(() => message.delete().catch(() => {}), 1000);
+          dbg('!register -> roblox user not found for username:', robloxUsername);
           return;
         }
 
@@ -309,6 +391,7 @@ client.on('messageCreate', async (message) => {
 
         db.mappings[robloxId] = message.author.id;
         saveDB();
+        dbg('!register -> mapping saved:', robloxId, '=>', message.author.id);
 
         try {
           const checkChannelMention = message.guild.channels.cache.find(ch => ch.name === CHECK_CHANNEL);
@@ -324,15 +407,18 @@ client.on('messageCreate', async (message) => {
             .setTimestamp();
           
           await message.author.send({ embeds: [embed] });
+          dbg('!register -> DM sent to user:', message.author.id);
         } catch (err) {
-          console.error('Could not send DM:', err);
+          console.error('Could not send DM:', err && (err.stack || err));
+          dbg('!register -> could not DM user:', message.author.id, err && (err.message || err));
         }
 
         setTimeout(() => message.delete().catch(() => {}), 1000);
         return;
 
       } catch (error) {
-        console.error('Error fetching user:', error);
+        console.error('Error fetching user:', error && (error.stack || error));
+        dbg('!register -> error fetching roblox user for username:', robloxUsername, error && (error.message || error));
         const errorMsg = await message.reply('❌ Error fetching user. Please try again.');
         setTimeout(() => errorMsg.delete().catch(() => {}), 5000);
         setTimeout(() => message.delete().catch(() => {}), 1000);
@@ -342,6 +428,7 @@ client.on('messageCreate', async (message) => {
 
     // !unlink command
     if (content === '!unlink') {
+      dbg('!unlink command detected from', message.author.tag);
       const userId = message.author.id;
       const robloxId = Object.keys(db.mappings).find((id) => db.mappings[id] === userId);
 
@@ -349,11 +436,13 @@ client.on('messageCreate', async (message) => {
         const errorMsg = await message.reply('❌ You do not have any linked Roblox account.');
         setTimeout(() => errorMsg.delete().catch(() => {}), 5000);
         setTimeout(() => message.delete().catch(() => {}), 1000);
+        dbg('!unlink -> no mapping found for user:', userId);
         return;
       }
 
       delete db.mappings[robloxId];
       saveDB();
+      dbg('!unlink -> mapping removed for robloxId:', robloxId);
 
       try {
         const embed = new EmbedBuilder()
@@ -366,24 +455,31 @@ client.on('messageCreate', async (message) => {
           .setTimestamp();
         
         await message.author.send({ embeds: [embed] });
-      } catch (err) {}
+        dbg('!unlink -> DM sent to user about unlink:', userId);
+      } catch (err) {
+        dbg('!unlink -> could not DM user after unlink:', userId, err && (err.message || err));
+      }
 
       setTimeout(() => message.delete().catch(() => {}), 1000);
       return;
     }
 
     // Delete any other message in registration channel
+    dbg('messageCreate -> deleting non-command message in registration channel from', message.author.tag);
     setTimeout(() => message.delete().catch(() => {}), 1000);
     return;
   }
 
   // CHECK CHANNEL COMMANDS
-  if (channelName === CHECK_CHANNEL) {
-    if (content === '!check') {
+  if (message.channel.name === CHECK_CHANNEL) {
+    const contentCheck = message.content.trim();
+    if (contentCheck === '!check') {
+      dbg('!check invoked by', message.author.tag, message.author.id);
       const userId = message.author.id;
       
       // Find Roblox ID
       const robloxId = Object.keys(db.mappings).find((id) => db.mappings[id] === userId);
+      dbg('!check -> mapped robloxId for discord user:', userId, '=>', robloxId);
       
       if (!robloxId) {
         const regChannel = message.guild.channels.cache.find(ch => ch.name === REGISTRATION_CHANNEL);
@@ -394,26 +490,33 @@ client.on('messageCreate', async (message) => {
         );
         setTimeout(() => errorMsg.delete().catch(() => {}), 10000);
         setTimeout(() => message.delete().catch(() => {}), 1000);
+        dbg('!check -> aborted: no linked robloxId for discord user:', userId);
         return;
       }
 
       const loadingMsg = await message.reply('🔍 Checking your Roblox inventory...');
+      dbg('!check -> checking passes for robloxId:', robloxId);
 
       let foundAny = false;
 
       for (const [productId, product] of Object.entries(productMap)) {
+        dbg('!check -> iterating product:', productId, product.name);
         const deliveryKey = `${robloxId}_${productId}`;
         
         // Check if already delivered
         if (db.deliveredPasses[deliveryKey]) {
+          dbg('!check -> already delivered key, skipping:', deliveryKey);
           continue;
         }
 
         // Check if user owns the Game Pass
+        dbg('!check -> calling checkGamePassOwnership for', product.gamePassId);
         const ownsPass = await checkGamePassOwnership(robloxId, product.gamePassId);
+        dbg('!check -> checkGamePassOwnership returned:', ownsPass, 'for', product.gamePassId);
         
         if (ownsPass) {
           foundAny = true;
+          dbg('!check -> user owns pass, delivering product:', product.name);
           
           const success = await deliverConfig(message.author, product, robloxId, product.gamePassId);
           
@@ -425,10 +528,13 @@ client.on('messageCreate', async (message) => {
               deliveredAt: new Date().toISOString()
             };
             saveDB();
+            dbg('!check -> delivery recorded in DB for key:', deliveryKey);
             
             await loadingMsg.edit(`✅ **${product.name}** delivered! Check your DMs.`);
+            dbg('!check -> loading message edited to success for', message.author.id);
           } else {
             await loadingMsg.edit(`❌ Error delivering **${product.name}**. Contact support.`);
+            dbg('!check -> delivery failed for product:', product.name, 'user:', message.author.id);
           }
           
           setTimeout(() => loadingMsg.delete().catch(() => {}), 5000);
@@ -438,6 +544,7 @@ client.on('messageCreate', async (message) => {
       }
 
       if (!foundAny) {
+        dbg('!check -> no passes found or already claimed for robloxId:', robloxId);
         await loadingMsg.edit('❌ No Game Pass found in your inventory or already claimed.');
         setTimeout(() => loadingMsg.delete().catch(() => {}), 10000);
       }
@@ -447,6 +554,7 @@ client.on('messageCreate', async (message) => {
     }
 
     // Delete any other message in check channel
+    dbg('messageCreate -> deleting non-command message in check channel from', message.author.tag);
     setTimeout(() => message.delete().catch(() => {}), 1000);
     return;
   }
@@ -456,22 +564,33 @@ const app = express();
 app.use(express.json());
 
 app.post('/api/payment', async (req, res) => {
+  dbg('/api/payment -> request headers:', req.headers);
+  dbg('/api/payment -> request body:', req.body);
+
   const secret = req.header('x-shared-secret');
-  if (secret !== SHARED_SECRET) return res.status(401).send('Unauthorized');
+  if (secret !== SHARED_SECRET) {
+    dbg('/api/payment -> unauthorized: bad shared secret');
+    return res.status(401).send('Unauthorized');
+  }
 
   const payload = req.body;
   if (!payload.userId || !payload.productId || !payload.receiptId) {
+    dbg('/api/payment -> invalid payload:', payload);
     return res.status(400).send('Invalid payload');
   }
 
   if (db.deliveredReceipts[payload.receiptId]) {
+    dbg('/api/payment -> already delivered receipt:', payload.receiptId);
     return res.status(200).send('Already delivered');
   }
 
   const discordId = payload.discordId || db.mappings[String(payload.userId)];
+  dbg('/api/payment -> resolved discordId:', discordId, 'from payload or mappings');
+
   if (!discordId) {
     db.deliveredReceipts[payload.receiptId] = { status: 'pending', payload };
     saveDB();
+    dbg('/api/payment -> no discord id found, saved pending receipt:', payload.receiptId);
     return res.status(200).send('No Discord ID found');
   }
 
@@ -483,6 +602,7 @@ app.post('/api/payment', async (req, res) => {
   };
   saveDB();
 
+  dbg('/api/payment -> delivery result for receipt', payload.receiptId, ':', result);
   res.status(200).send(result.ok ? 'Delivered' : 'Delivery failed');
 });
 
@@ -495,6 +615,7 @@ app.post('/map', (req, res) => {
 
   db.mappings[String(robloxId)] = discordId;
   saveDB();
+  dbg('/map -> mapping saved:', robloxId, '=>', discordId);
   res.send({ ok: true });
 });
 
@@ -503,4 +624,7 @@ app.get('/health', (req, res) => {
 });
 
 client.login(DISCORD_TOKEN);
-app.listen(PORT, () => console.log(`Server listening on port ${PORT}`));
+app.listen(PORT, () => {
+  console.log(`Server listening on port ${PORT}`);
+  dbg('Express server started on port', PORT);
+});
