@@ -44,17 +44,17 @@ const CHECK_CHANNEL = 'check-bought';
 
 // Product mapping with Game Pass IDs
 const productMap = {
-  '12345678': { 
-    gamePassId: '12345678',
-    filename: 'configs/configPremium.zip', 
-    description: 'Premium Config',
-    name: 'Premium Config'
+  '1581370634': { 
+    gamePassId: '1581370634',
+    filename: 'configs/deelegit.zip', 
+    description: 'THE BEST Dee hood LEGIT CFG',
+    name: 'Dee Hood Legit CFG'
   },
-  '87654321': { 
-    gamePassId: '87654321',
-    filename: 'configs/configBasic.zip', 
-    description: 'Basic Config',
-    name: 'Basic Config'
+  '1577628225': { 
+    gamePassId: '1577628225',
+    filename: 'configs/deerage.zip', 
+    description: 'THE BEST Dee hood RAGE CFG',
+    name: 'Dee Hood Rage CFG'
   }
 };
 
