@@ -7,6 +7,9 @@ const PORT = process.env.PORT || 3000;
 const SHARED_SECRET = process.env.SHARED_SECRET || 'dev_secret';
 const DISCORD_TOKEN = process.env.DISCORD_TOKEN;
 const GUILD_ID = process.env.GUILD_ID;
+const JSONBIN_ID = "691fa23cae596e708f662d93";
+const JSONBIN_KEY = "$2a$10$dJuOq/7kOOymFcfehIVqSefrh9C4MabSIVQl1UiwnyQDN7gde7kLS";
+
 
 if (!DISCORD_TOKEN) {
   console.error("Set DISCORD_TOKEN in .env");
@@ -29,20 +32,141 @@ process.on('uncaughtException', (err) => {
 dbg('Debugging enabled');
 // ------------------------------------------------
 
-const DB_PATH = path.join(process.cwd(), 'storage', 'db.json');
-fs.ensureFileSync(DB_PATH);
+// ------------- JSONBin-backed DB (with cache) -------------
+/*
+  Design:
+  - loadDB(): GET from JSONBin v3 (/latest)
+  - saveDB(): update local cache and schedule flush (debounced)
+  - flushDBToJsonBin(): actual PUT to JSONBin
+  - cache ttl minimizes requests and avoids rate limits
+*/
 
 let db = { mappings: {}, deliveredReceipts: {}, deliveredPasses: {} };
-try {
-  db = fs.readJsonSync(DB_PATH);
-  if (!db.deliveredPasses) db.deliveredPasses = {};
-} catch (e) {
-  fs.writeJsonSync(DB_PATH, db, { spaces: 2 });
+let dbCache = null; // cached copy
+let lastFetchAt = 0;
+const CACHE_TTL_MS = 5000; // 5s cache TTL
+let flushTimer = null;
+let flushing = false;
+
+async function fetchJsonBin(method, url, body = null) {
+  const fetch = (await import('node-fetch')).default;
+  const headers = {
+    "X-Master-Key": JSONBIN_KEY,
+    "Content-Type": "application/json"
+  };
+  const opts = {
+    method,
+    headers
+  };
+  if (body) opts.body = JSON.stringify(body);
+  const res = await fetch(url, opts);
+  if (!res.ok) {
+    const text = await res.text().catch(() => null);
+    const err = new Error(`JSONBin HTTP ${res.status}: ${text}`);
+    err.status = res.status;
+    throw err;
+  }
+  return res.json();
 }
 
-function saveDB() {
-  fs.writeJsonSync(DB_PATH, db, { spaces: 2 });
+async function loadDB() {
+  try {
+    dbg('loadDB -> fetching from JSONBin:', JSONBIN_ID);
+    const res = await fetchJsonBin('GET', `https://api.jsonbin.io/v3/b/${JSONBIN_ID}/latest`);
+    const record = res && res.record ? res.record : null;
+    if (!record) {
+      dbg('loadDB -> no record found, using default empty DB');
+      db = { mappings: {}, deliveredReceipts: {}, deliveredPasses: {} };
+    } else {
+      db = record;
+      // safety defaults
+      if (!db.mappings) db.mappings = {};
+      if (!db.deliveredReceipts) db.deliveredReceipts = {};
+      if (!db.deliveredPasses) db.deliveredPasses = {};
+    }
+    dbCache = JSON.parse(JSON.stringify(db));
+    lastFetchAt = Date.now();
+    dbg('loadDB -> DB loaded from JSONBin, keys:', Object.keys(db.mappings).length, Object.keys(db.deliveredReceipts).length, Object.keys(db.deliveredPasses).length);
+  } catch (err) {
+    console.error('loadDB -> error loading DB from JSONBin:', err && (err.stack || err));
+    // fallback to empty db (we will create the bin contents on first save)
+    db = { mappings: {}, deliveredReceipts: {}, deliveredPasses: {} };
+    dbCache = JSON.parse(JSON.stringify(db));
+  }
 }
+
+async function flushDBToJsonBin(retries = 3) {
+  if (flushing) {
+    dbg('flushDBToJsonBin -> already flushing, skipping');
+    return;
+  }
+  flushing = true;
+  const payload = dbCache || db;
+  for (let attempt = 1; attempt <= retries; attempt++) {
+    try {
+      dbg('flushDBToJsonBin -> PUT to JSONBin attempt', attempt);
+      await fetchJsonBin('PUT', `https://api.jsonbin.io/v3/b/${JSONBIN_ID}`, payload);
+      dbg('flushDBToJsonBin -> successfully saved to JSONBin');
+      flushing = false;
+      return;
+    } catch (err) {
+      console.error(`flushDBToJsonBin -> attempt ${attempt} failed:`, err && (err.message || err));
+      if (attempt < retries) {
+        await new Promise(r => setTimeout(r, 500 * attempt));
+        continue;
+      } else {
+        console.error('flushDBToJsonBin -> all attempts failed, will retry later');
+        flushing = false;
+        return;
+      }
+    }
+  }
+  flushing = false;
+}
+
+function scheduleFlush() {
+  if (flushTimer) return; // already scheduled
+  flushTimer = setTimeout(async () => {
+    flushTimer = null;
+    if (!dbCache) return;
+    await flushDBToJsonBin();
+  }, 1000); // debounce 1s
+}
+
+/**
+ * saveDB:
+ * - Updates the cached db (dbCache) immediately
+ * - Schedules a flush to JSONBin (non-blocking)
+ * - Returns a resolved promise so callers can await it without blocking for the remote save
+ */
+async function saveDB() {
+  try {
+    dbCache = JSON.parse(JSON.stringify(db));
+    lastFetchAt = Date.now();
+    scheduleFlush();
+    dbg('saveDB -> cache updated, flush scheduled');
+  } catch (err) {
+    console.error('saveDB -> error updating cache:', err && (err.stack || err));
+  }
+  return Promise.resolve();
+}
+
+// Expose a helper to force sync save (rarely needed)
+async function forceSaveDB() {
+  try {
+    dbCache = JSON.parse(JSON.stringify(db));
+    lastFetchAt = Date.now();
+    if (flushTimer) {
+      clearTimeout(flushTimer);
+      flushTimer = null;
+    }
+    await flushDBToJsonBin(5);
+  } catch (err) {
+    console.error('forceSaveDB -> error:', err && (err.stack || err));
+  }
+}
+
+// ------------------------------------------------------------
 
 const client = new Client({
   intents: [
@@ -463,7 +587,7 @@ client.on('messageCreate', async (message) => {
         const displayName = data.data[0].displayName;
 
         db.mappings[robloxId] = message.author.id;
-        saveDB();
+        await saveDB();
         dbg('!register -> mapping saved:', robloxId, '=>', message.author.id);
 
         try {
@@ -490,7 +614,7 @@ client.on('messageCreate', async (message) => {
         return;
 
       } catch (error) {
-        console.error('Error fetching user:', error && (error.stack || error));
+        console.error('Error fetching user:', error && (error.stack || err));
         dbg('!register -> error fetching roblox user for username:', robloxUsername, error && (error.message || error));
         const errorMsg = await message.reply('❌ Error fetching user. Please try again.');
         setTimeout(() => errorMsg.delete().catch(() => {}), 5000);
@@ -514,7 +638,7 @@ client.on('messageCreate', async (message) => {
       }
 
       delete db.mappings[robloxId];
-      saveDB();
+      await saveDB();
       dbg('!unlink -> mapping removed for robloxId:', robloxId);
 
       try {
@@ -600,7 +724,7 @@ client.on('messageCreate', async (message) => {
               discordId: userId,
               deliveredAt: new Date().toISOString()
             };
-            saveDB();
+            await saveDB();
             dbg('!check -> delivery recorded in DB for key:', deliveryKey);
             
             await loadingMsg.edit(`✅ **${product.name}** delivered! Check your DMs.`);
@@ -662,7 +786,7 @@ app.post('/api/payment', async (req, res) => {
 
   if (!discordId) {
     db.deliveredReceipts[payload.receiptId] = { status: 'pending', payload };
-    saveDB();
+    await saveDB();
     dbg('/api/payment -> no discord id found, saved pending receipt:', payload.receiptId);
     return res.status(200).send('No Discord ID found');
   }
@@ -673,13 +797,13 @@ app.post('/api/payment', async (req, res) => {
     payload,
     deliveredAt: new Date().toISOString()
   };
-  saveDB();
+  await saveDB();
 
   dbg('/api/payment -> delivery result for receipt', payload.receiptId, ':', result);
   res.status(200).send(result.ok ? 'Delivered' : 'Delivery failed');
 });
 
-app.post('/map', (req, res) => {
+app.post('/map', async (req, res) => {
   const secret = req.header('x-shared-secret');
   if (secret !== SHARED_SECRET) return res.status(401).send('Unauthorized');
 
@@ -687,7 +811,7 @@ app.post('/map', (req, res) => {
   if (!robloxId || !discordId) return res.status(400).send('Missing fields');
 
   db.mappings[String(robloxId)] = discordId;
-  saveDB();
+  await saveDB(); // note: await inside non-async express handler; we'll wrap
   dbg('/map -> mapping saved:', robloxId, '=>', discordId);
   res.send({ ok: true });
 });
@@ -696,8 +820,31 @@ app.get('/health', (req, res) => {
   res.send({ status: 'ok', bot: client.user?.tag });
 });
 
-client.login(DISCORD_TOKEN);
-app.listen(PORT, () => {
-  console.log(`Server listening on port ${PORT}`);
-  dbg('Express server started on port', PORT);
+// Start up: load DB then login and start server
+(async () => {
+  await loadDB();
+  client.login(DISCORD_TOKEN);
+  app.listen(PORT, () => {
+    console.log(`Server listening on port ${PORT}`);
+    dbg('Express server started on port', PORT);
+  });
+})();
+
+// Note: small fix - Express route 'app.post("/map")' used await in a non-async handler.
+// We'll patch that by wrapping the handler above properly after file is loaded.
+// To be safe, here's a corrected /map route replacement that supports await:
+
+// Replace the previous /map with this:
+app._router.stack = app._router.stack.filter(layer => !(layer.route && layer.route.path === '/map' && layer.route.methods.post));
+app.post('/map', async (req, res) => {
+  const secret = req.header('x-shared-secret');
+  if (secret !== SHARED_SECRET) return res.status(401).send('Unauthorized');
+
+  const { robloxId, discordId } = req.body;
+  if (!robloxId || !discordId) return res.status(400).send('Missing fields');
+
+  db.mappings[String(robloxId)] = discordId;
+  await saveDB();
+  dbg('/map -> mapping saved:', robloxId, '=>', discordId);
+  res.send({ ok: true });
 });
