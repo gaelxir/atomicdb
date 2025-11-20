@@ -7,8 +7,9 @@ const PORT = process.env.PORT || 3000;
 const SHARED_SECRET = process.env.SHARED_SECRET || 'dev_secret';
 const DISCORD_TOKEN = process.env.DISCORD_TOKEN;
 const GUILD_ID = process.env.GUILD_ID;
-const JSONBIN_ID = "691fa23cae596e708f662d93";
-const JSONBIN_KEY = "$2a$10$dJuOq/7kOOymFcfehIVqSefrh9C4MabSIVQl1UiwnyQDN7gde7kLS";
+const JSONBIN_ID = process.env.JSONBIN_ID;
+const JSONBIN_KEY = process.env.JSONBIN_KEY;
+
 
 
 if (!DISCORD_TOKEN) {
