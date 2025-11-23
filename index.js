@@ -538,6 +538,67 @@ client.once('ready', async () => {
         dbg('ready -> posted check embed in channel:', checkChannel.id);
       } else {
         dbg('ready -> check embed already present in channel:', checkChannel.id);
+        // Store channel message
+    try {
+      const storeChannel = guild.channels.cache.get('1437645705908064298');
+      
+      if (storeChannel && storeChannel.isTextBased()) {
+        dbg('ready -> found store channel');
+        
+        const messages = await storeChannel.messages.fetch({ limit: 5 });
+        const hasStoreMsg = messages.some(m => 
+          m.author.id === client.user.id && 
+          m.content.includes('AtomicDB Figs Store')
+        );
+        
+        if (!hasStoreMsg) {
+          const { ActionRowBuilder, ButtonBuilder, ButtonStyle } = await import('discord.js');
+          
+          const row1 = new ActionRowBuilder().addComponents(
+            new ButtonBuilder()
+              .setLabel('🔥 Dee Hood RAGE CFG')
+              .setStyle(ButtonStyle.Link)
+              .setURL('https://www.roblox.com/es/game-pass/1577628225/dee-rage')
+          );
+          
+          const row2 = new ActionRowBuilder().addComponents(
+            new ButtonBuilder()
+              .setLabel('🎯 Dee Hood LEGIT CFG')
+              .setStyle(ButtonStyle.Link)
+              .setURL('https://www.roblox.com/es/game-pass/1581370634/dee-legit')
+          );
+          
+          const row3 = new ActionRowBuilder().addComponents(
+            new ButtonBuilder()
+              .setLabel('🏹 Ar Hood RAGE CFG')
+              .setStyle(ButtonStyle.Link)
+              .setURL('https://www.roblox.com/es/game-pass/1583049994/ar-rage')
+          );
+          
+          const row4 = new ActionRowBuilder().addComponents(
+            new ButtonBuilder()
+              .setLabel('🧟 Zee Hood RAGE CFG')
+              .setStyle(ButtonStyle.Link)
+              .setURL('https://www.roblox.com/es/game-pass/1596952645/zee-rage')
+          );
+          
+          const storeEmbed = new EmbedBuilder()
+            .setTitle('⚙️ AtomicDB Figs — ECCO Configs Collection 💫')
+            .setDescription('Dominate Hood games with professionally tuned configs.\n\n📜 **Before buying:** <#1437644135254327386>')
+            .setColor(0x0094EF);
+          
+          await storeChannel.send({
+            content: '@everyone 💥 **Welcome to the AtomicDB Figs Store!**',
+            embeds: [storeEmbed],
+            components: [row1, row2, row3, row4]
+          });
+          
+          dbg('ready -> posted store message');
+        }
+      }
+    } catch (err) {
+      dbg('ready -> error posting store message:', err);
+    }
       }
     }
   }
